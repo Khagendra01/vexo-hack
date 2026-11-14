@@ -63,6 +63,8 @@ def main() -> None:
 
     public = args.public_url.rstrip("/")
     roster = sorted(bands[p] for p in args.people)
+    cfg_dir = ROOT / "config"
+    cfg_dir.mkdir(exist_ok=True)
     db = open_database()
 
     tokens = {"public_url": public, "mode": args.mode, "operator": operator_token(db), "people": {}}
@@ -73,14 +75,22 @@ def main() -> None:
             tokens["people"][person] = {
                 "band": bands[person],
                 "user_token": made["user_token"],
+                "hub_token": made["hub_token"],
                 "phone_url": f"{public}/?token={made['user_token']}",
             }
+            hub_cfg = {
+                "server_url": public,
+                "hub_token": made["hub_token"],
+                "band_number": bands[person],
+                "roster": roster,
+                "adapter": "sim" if args.mode == "simulated" else "real",
+                "scan": args.mode != "simulated",
+            }
+            (cfg_dir / f"hub-{person}.hosted.local.json").write_text(json.dumps(hub_cfg, indent=2) + "\n")
     finally:
         db.close()
 
     tokens["operator_url"] = f"{public}/operator?token={tokens['operator']}"
-    cfg_dir = ROOT / "config"
-    cfg_dir.mkdir(exist_ok=True)
     out = cfg_dir / "tokens.hosted.local.json"
     out.write_text(json.dumps(tokens, indent=2) + "\n")
 
@@ -88,6 +98,10 @@ def main() -> None:
     for person, t in tokens["people"].items():
         print(f"  {person:6} band {t['band']:>3}")
     print(f"Links written to {out} (git-ignored).")
+    print(f"Hub configs written to {cfg_dir}/hub-*.hosted.local.json (git-ignored).")
+    example = args.people[0]
+    flag = " --sim" if args.mode == "simulated" else ""
+    print(f"Run a hub with: .venv/bin/python -m hub.hub --config config/hub-{example}.hosted.local.json{flag}")
 
 
 if __name__ == "__main__":

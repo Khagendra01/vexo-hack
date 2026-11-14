@@ -21,6 +21,8 @@ Correctness notes:
   epoch-second magnitudes.
 * `INSERT OR IGNORE` becomes `INSERT ... ON CONFLICT DO NOTHING`, and `MAX(a, b)` in the
   one upsert becomes `GREATEST(a, b)`.
+* Epoch-millisecond sequences use `BIGINT`; SQLite's `INTEGER` is already 64-bit, but
+  PostgreSQL's is 32-bit.
 """
 from __future__ import annotations
 
@@ -37,6 +39,10 @@ log = logging.getLogger("vexo.db.pg")
 POSTGRES_PREFIXES = ("postgres://", "postgresql://")
 MIGRATION_LOCK_KEY = 0x76657830  # "vex0"
 WRITE_LOCK_KEY = 0x76657831
+
+PG_MIGRATIONS = MIGRATIONS + [
+    "ALTER TABLE sightings ALTER COLUMN sequence TYPE BIGINT;",
+]
 
 
 def is_postgres_url(value: str | None) -> bool:
@@ -190,6 +196,7 @@ class PostgresDatabase:
     """Same interface as `server.db.Database`, backed by one serialized PG connection."""
 
     backend = "postgresql"
+    expected_version = len(PG_MIGRATIONS)
 
     def __init__(self, dsn: str, clock: Clock | None = None):
         import psycopg
@@ -209,7 +216,7 @@ class PostgresDatabase:
                 raw.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)")
                 row = raw.execute("SELECT version FROM schema_version").fetchone()
                 current = int(row["version"]) if row else 0
-                for number, script in enumerate(MIGRATIONS, start=1):
+                for number, script in enumerate(PG_MIGRATIONS, start=1):
                     if number <= current:
                         continue
                     raw.execute("BEGIN")
@@ -271,7 +278,7 @@ def open_database(configured_path: str | None = None, clock: Clock | None = None
 
 def readiness(db, expected_version: int | None = None) -> tuple[bool, dict]:
     """Sanitized readiness detail: no DSN, credentials or stack traces."""
-    expected = len(MIGRATIONS) if expected_version is None else expected_version
+    expected = expected_version if expected_version is not None else getattr(db, "expected_version", len(MIGRATIONS))
     try:
         row = db.one("SELECT version FROM schema_version")
         version = int(row["version"]) if row else 0

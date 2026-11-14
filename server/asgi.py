@@ -20,7 +20,6 @@ from fastapi.responses import JSONResponse
 
 from . import config as config_mod
 from .app import UI, create_app
-from .db import MIGRATIONS
 from .pg import open_database, readiness
 
 log = logging.getLogger("vexo.asgi")
@@ -103,7 +102,7 @@ def create_serving_app() -> FastAPI:
     if "/readyz" not in existing:
         @app.get("/readyz")
         def readyz():
-            ok, detail = readiness(db, expected_version=len(MIGRATIONS))
+            ok, detail = readiness(db)
             return JSONResponse(detail, status_code=200 if ok else 503)
 
     def _close_db() -> None:

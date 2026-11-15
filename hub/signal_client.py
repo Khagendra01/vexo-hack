@@ -4,7 +4,7 @@
     .venv/bin/python -m hub.signal_client --name kgen --band 36 --real     # real band over Bluetooth
 
 Joins the hosted server by name (default kgen). --band is the band number to light.
-accept -> green BLINKING for --match-seconds (15), reject -> solid red for --shine seconds, then off.
+accept -> alternates green and pink for --match-seconds (15), reject -> solid red for --shine seconds, then off.
 """
 from __future__ import annotations
 
@@ -20,7 +20,8 @@ from .adapters import RealBand, SimBand
 ROOT = Path(__file__).resolve().parent.parent
 token_cache: dict = {}
 COLORS = {"accept": "#00ff00", "reject": "#ff0000"}
-BLINK_PERIOD_MS = 600
+MATCH_ALT = "#ff2d95"        # pink: the match animation alternates green and pink
+FLASH_S = 0.6
 log = logging.getLogger("vexo.signal")
 
 
@@ -55,13 +56,19 @@ async def run(server: str, name: str, band, shine: float, poll: float, match_sec
                             await band.connect()
                         matched = sig["answer"] == "accept"
                         hold = match_seconds if matched else shine
-                        await band.set_led(COLORS[sig["answer"]], pattern="blink" if matched else "solid",
-                                           brightness=1.0, period=BLINK_PERIOD_MS)
-                        log.info("%s sent %s; band %s %s %s for %.1f seconds",
-                                 sig["from"], sig["answer"], band.number, "blinks" if matched else "shines",
-                                 sig["answer"], hold)
+                        await band.set_led(COLORS[sig["answer"]], pattern="solid", brightness=1.0)
+                        log.info("%s sent %s; band %s %s for %.1f seconds",
+                                 sig["from"], sig["answer"], band.number,
+                                 "alternates green/pink" if matched else "shines red", hold)
                         seen = sig["seq"]
-                        await asyncio.sleep(hold)
+                        if matched:        # green <-> pink; the band's own blink pattern is single-colour
+                            loop, end, pink = asyncio.get_running_loop(), asyncio.get_running_loop().time() + hold, True
+                            while loop.time() < end:
+                                await asyncio.sleep(min(FLASH_S, max(0.0, end - loop.time())))
+                                await band.set_led(MATCH_ALT if pink else COLORS["accept"], pattern="solid", brightness=1.0)
+                                pink = not pink
+                        else:
+                            await asyncio.sleep(hold)
                         await band.led_off()
                         log.info("band %s light off", band.number)
                 except (httpx.HTTPError, KeyError, ValueError) as exc:

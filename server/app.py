@@ -17,6 +17,7 @@ from . import config as config_mod
 from . import eligibility, lifecycle, presence, profiler, second_you
 from .config import PALETTE_NAMES, Config
 from .db import Database, dumps, hash_token, loads, new_id
+from . import signal_api
 from .schemas import (DatingStatus, DemoSighting, PreferencesEdit, ProfileEdit, Respond, Tick,
                       VoiceNote)
 from .worker import Engine
@@ -445,6 +446,16 @@ def create_app(cfg: Config | None = None, db: Database | None = None, start_work
     second_you.register(app, db, cfg, user)
 
     # ------------------------------------------------------------ static pages
+
+    signal_api.register(app)
+
+    @app.get("/respond")
+    def respond_page():
+        return FileResponse(UI / "respond.html")
+
+    @app.get("/connect")
+    def connect_page():
+        return FileResponse(UI / "respond.html")
 
     @app.get("/")
     def phone_page():

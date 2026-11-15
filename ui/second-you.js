@@ -78,7 +78,7 @@
         <div class="small muted">${n} sealed message${n === 1 ? "" : "s"} passed along</div>
         <ul class="steps">${STEPS.map(([name, at]) => {
           const done = s.my_verdict_sent || n >= at;
-          return `<li><span>${name}</span><span class="${done ? "" : "muted"}">${done ? "done" : "in progress"}</span></li>`;
+          return `<li><span class="dot ${done ? "on" : ""}"></span><span>${name}</span><span class="muted">${done ? "done" : "in progress"}</span></li>`;
         }).join("")}</ul>
       </section>
       <section class="card">
@@ -95,10 +95,10 @@
     const d = s.decision;
     const ask = s.you_accepted === true
       ? "<div class='label'>You said yes. Waiting for them.</div>"
-      : `<div class="actions"><button class="primary" data-act="yes">Yes, I'm in</button><button data-act="no">Not this time</button></div>`;
+      : `<div class="actions"><button class="a" data-act="yes">Yes, I'm in</button><button class="r" data-act="no">Not this time</button></div>`;
     return `<section class="card">
         <h2>It's a match</h2>${who(s)}
-        <div class="big">${pct(d.score)}</div>
+        <div class="verdict">Your agents say yes</div><div class="big">${pct(d.score)}</div>
         <div class="small">Your agents think you two would click. Both phones agreed, nothing clashed and nobody made stuff up.</div>
         ${meter(d)}
         <div class="small muted" style="margin-top:8px">Both of you have to say yes before names are shown.</div>
@@ -125,7 +125,7 @@
     const p = EXAMPLE_PLAN;
     const btn = s.you_confirmed_date
       ? "<div class='label'>You confirmed. Waiting for them.</div>"
-      : `<div class="actions"><button class="primary" data-act="confirm">Confirm</button></div>`;
+      : `<div class="actions"><button class="a" data-act="confirm">Confirm</button></div>`;
     return `<section class="card"><h2>It's mutual</h2>${who(s)}
         <div class="small" style="margin-top:10px">Your agents already planned something you'd both like.</div></section>
       <section class="card"><h2>Date plan</h2>

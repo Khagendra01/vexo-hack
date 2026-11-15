@@ -76,3 +76,12 @@ Full results: `sim/results.json`.
 - The story shots in the demo video are AI-generated (Gemini Omni Flash). The app screens use real transcript lines from the simulation.
 - The real Vexo Band gives quiet haptics and has no light. The pink glow in the video's opening is a concept.
 - All code in this folder was written during the hackathon.
+
+## In the Vexo Match server
+
+Second You plugs into the Vexo Match app as `server/second_you.py` (routes under `/api/second-you/`),
+`ui/second-you.html` + `ui/second-you.js` (page at `/second-you`, linked from the phone page) and
+`tests/test_second_you.py`. The server only relays sealed agent messages (memory only, delivered once),
+combines each phone's five verdict numbers with the `Chemistry.swift` math, and stores match state and
+date outcomes for the `Feedback.swift` floor calibration. Profile, card, transcript or questionnaire
+payloads are refused. When both people say yes in Second You, the yes is forwarded to the Vexo match.

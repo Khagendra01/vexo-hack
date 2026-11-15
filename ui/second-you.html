@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Second You</title>
+<link rel="stylesheet" href="/ui/styles.css">
+<style>
+  /* Second You only. Built from the shared tokens in styles.css. */
+  .meter { position: relative; height: 12px; border-radius: 999px; background: var(--line); margin: 10px 0 4px; overflow: hidden; }
+  .meter .fill { position: absolute; top: 0; bottom: 0; left: 0; background: var(--accent); border-radius: 999px; transition: width .4s; }
+  .meter .band { position: absolute; top: 0; bottom: 0; background: var(--accent); opacity: .35; border-radius: 999px; }
+  .meter .floor { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink); }
+  .meter-labels { display: flex; justify-content: space-between; }
+  .who { display: flex; align-items: center; gap: 12px; }
+  .avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--bg); border: 1px solid var(--line);
+            display: grid; place-items: center; font-weight: 700; color: var(--muted); flex: none; }
+  .avatar.known { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .steps { list-style: none; padding: 0; margin: 10px 0 0; }
+  .steps li { display: flex; justify-content: space-between; padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .steps li:first-child { border-top: 0; }
+  .chat { margin-top: 10px; }
+  .bubble { padding: 8px 12px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line);
+            margin: 6px 0; max-width: 85%; font-size: 14px; }
+  .bubble.mine { margin-left: auto; background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .big { font-size: 28px; font-weight: 700; margin: 4px 0; }
+  .stars { display: flex; gap: 6px; }
+  .stars button { flex: 1; padding: 8px 0; }
+  .stars button.on, .choice button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .choice { display: flex; gap: 8px; margin-top: 6px; }
+  .choice button { flex: 1; }
+  #stage { white-space: nowrap; }
+  a.back { color: var(--accent); text-decoration: none; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="row">
+    <div>
+      <a class="back" href="/">‹ Vexo Match</a>
+      <h1>Second You</h1>
+      <div class="small muted">Your agent meets their agent first. It runs on your phone.</div>
+    </div>
+    <span class="pill" id="stage">loading</span>
+  </div>
+
+  <div id="screen"></div>
+
+  <section class="card">
+    <h2>What leaves your phone</h2>
+    <div class="small">Only sealed chat messages (the server can't read them) and five numbers: three scores, a clash flag and a made-up-stuff flag. Your notes, answers and agent card never leave your phone.</div>
+  </section>
+</main>
+<div class="toast" id="toast" hidden></div>
+<script src="/ui/second-you.js"></script>
+</body>
+</html>

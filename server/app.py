@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import config as config_mod
-from . import eligibility, lifecycle, presence, profiler
+from . import eligibility, lifecycle, presence, profiler, second_you
 from .config import PALETTE_NAMES, Config
 from .db import Database, dumps, hash_token, loads, new_id
 from .schemas import (DatingStatus, DemoSighting, PreferencesEdit, ProfileEdit, Respond, Tick,
@@ -439,6 +439,10 @@ def create_app(cfg: Config | None = None, db: Database | None = None, start_work
                             for d in conn.execute("SELECT * FROM device_desired")],
                 "color_leases": [dict(c) for c in conn.execute("SELECT * FROM color_leases")],
             }
+
+    # ------------------------------------------------------------ Second You (on-device agents)
+
+    second_you.register(app, db, cfg, user)
 
     # ------------------------------------------------------------ static pages
 

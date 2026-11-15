@@ -37,29 +37,39 @@ async def run(server: str, name: str, band, shine: float, poll: float) -> None:
                 await asyncio.sleep(3)
         log.info("joined %s as %s", server, name)
         http.headers["Authorization"] = f"Bearer {token_cache['t']}"
-        while True:
-            try:
-                resp = await http.get("/api/signal")
-                if resp.status_code == 401:                 # server restarted: re-join and carry on
-                    r = await http.post("/api/signal/join", json={"name": name})
-                    token_cache["t"] = r.json()["token"]
-                    http.headers["Authorization"] = f"Bearer {token_cache['t']}"
-                    continue
-                sig = resp.json().get("signal")
-                if sig and sig["seq"] > seen:
-                    seen = sig["seq"]
-                    log.info("%s said %s", sig["from"], sig["answer"])
-                    try:
+        try:
+            while True:
+                try:
+                    resp = await http.get("/api/signal")
+                    if resp.status_code == 401:                 # server restarted: re-join and carry on
+                        r = await http.post("/api/signal/join", json={"name": name})
+                        r.raise_for_status()
+                        token_cache["t"] = r.json()["token"]
+                        http.headers["Authorization"] = f"Bearer {token_cache['t']}"
+                        continue
+                    resp.raise_for_status()
+                    sig = resp.json().get("signal")
+                    if sig and sig["seq"] > seen:
                         if not band.connected:
                             await band.connect()
                         await band.set_led(COLORS[sig["answer"]], brightness=1.0)
+                        log.info("%s sent %s; band %s shines %s for %.1f seconds",
+                                 sig["from"], sig["answer"], band.number, sig["answer"], shine)
+                        seen = sig["seq"]
                         await asyncio.sleep(shine)
                         await band.led_off()
-                    except Exception as exc:       # keep polling even if the band link fails
-                        log.warning("band error: %s", exc)
-            except httpx.HTTPError as exc:
-                log.warning("server unreachable: %s", exc)
-            await asyncio.sleep(poll)
+                        log.info("band %s light off", band.number)
+                except (httpx.HTTPError, KeyError, ValueError) as exc:
+                    log.warning("server error: %s", exc)
+                except Exception as exc:       # retry the same answer if band link/LED fails
+                    log.warning("band error: %s", exc)
+                await asyncio.sleep(poll)
+        finally:
+            if band.connected:
+                try:
+                    await band.led_off()
+                finally:
+                    await band.disconnect()
 
 
 def main() -> None:

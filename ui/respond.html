@@ -27,6 +27,7 @@
   </div>
   <div id="live" hidden>
     <div class="muted">You are <b id="me"></b>. Keep this tab open.</div>
+    <div class="muted">Client ID: <code id="myid"></code> · online while this page checks in</div>
     <div id="inbox">No answers yet</div>
     <div class="muted">Everyone on the server</div>
     <div id="list"></div>
@@ -48,7 +49,7 @@
     const d = await r.json().catch(() => ({}));
     if (!r.ok) { $("err").textContent = typeof d.detail === "string" ? d.detail : "Could not join"; return; }
     me = d.name; token = d.token; store("vs-name", me); store("vs-token", token);
-    $("join").hidden = true; $("live").hidden = false; $("me").textContent = me; $("err").textContent = "";
+    $("join").hidden = true; $("live").hidden = false; $("me").textContent = me; $("myid").textContent = d.id; $("err").textContent = "";
     tick(); setInterval(tick, 1500);
   }
   async function tick() {

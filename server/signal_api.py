@@ -1,107 +1,137 @@
-"""Tiny browser-to-browser accept/reject demo with presence heartbeats.
+"""Small join-by-name demo relay for browser clients and a laptop band bridge.
 
-This is intentionally separate from dating eligibility and proximity matching. A
-browser is online while it refreshes its short-lived presence lease. The recipient
-can poll its latest signal; a laptop-side band bridge turns it into a light.
+This feature is deliberately independent of dating profiles, proximity and matching.
+Participants join with a demo name; the server assigns a random person ID and bearer
+token. Online state is a heartbeat lease refreshed by joining/polling clients.
 """
 from __future__ import annotations
 
+import re
+import secrets
 import threading
+import uuid
 from typing import Literal
 
-from fastapi import Depends, FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import FastAPI, Header, HTTPException
+from pydantic import BaseModel, Field, field_validator
 
-PRESENCE_TTL_S = 20
+PRESENCE_TTL_S = 12
 SIGNAL_TTL_S = 120
+NAME_RE = re.compile(r"^[\w .'-]+$", re.UNICODE)
 
 
-class PresenceIn(BaseModel):
-    session_id: str = Field(min_length=8, max_length=64)
+class JoinIn(BaseModel):
+    name: str = Field(min_length=1, max_length=24)
+    token: str | None = Field(default=None, min_length=8, max_length=128)
+
+    @field_validator("name")
+    @classmethod
+    def valid_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value or not NAME_RE.fullmatch(value):
+            raise ValueError("name may contain letters, numbers, spaces, apostrophe, dot and hyphen")
+        return value
 
 
 class SignalIn(BaseModel):
-    to: str = Field(min_length=1, max_length=128, description="Recipient user ID or exact display name")
+    to: str = Field(min_length=1, max_length=128)
     answer: Literal["accept", "reject"]
 
 
-def register(app: FastAPI, db, user_dep) -> None:
-    # This demo state is intentionally ephemeral and scoped to one Render instance.
-    # Heartbeats refresh every 6 seconds; after a restart all clients simply reappear.
-    presence: dict[tuple[str, str], float] = {}  # (user id, browser tab session) -> last heartbeat
-    latest: dict[str, dict] = {}                  # recipient user id -> latest signal
+def register(app: FastAPI) -> None:
+    # Render currently runs this demo as one service instance. This ephemeral state is
+    # enough for a live demo; after a restart each tab/process rejoins automatically.
+    members: dict[str, dict] = {}                 # person ID -> {token, name, last_seen}
+    token_to_id: dict[str, str] = {}
+    latest: dict[str, dict] = {}                   # recipient person ID -> newest answer
     counter = {"seq": 0}
-    lock = threading.Lock()
+    lock = threading.RLock()
 
-    def online_users(now: float) -> list[dict]:
+    def clean(now: float) -> None:
         with lock:
-            for key, seen_at in list(presence.items()):
-                if now - seen_at > PRESENCE_TTL_S:
-                    del presence[key]
-            ids = {uid for (uid, _session), seen_at in presence.items()
-                   if now - seen_at <= PRESENCE_TTL_S}
-        if not ids:
-            return []
-        placeholders = ",".join("?" for _ in ids)
-        rows = db.read(f"SELECT id, display_name FROM users WHERE id IN ({placeholders}) ORDER BY display_name",
-                       tuple(ids))
-        return [{"id": row["id"], "name": row["display_name"], "online": True} for row in rows]
+            expired = [uid for uid, m in members.items() if now - m["last_seen"] > PRESENCE_TTL_S]
+            for uid in expired:
+                token_to_id.pop(members[uid]["token"], None)
+                members.pop(uid, None)
 
-    @app.get("/api/connect/me")
-    def connect_me(uid: str = Depends(user_dep)):
-        row = db.one("SELECT id, display_name FROM users WHERE id = ?", (uid,))
-        return {"id": row["id"], "name": row["display_name"]}
-
-    @app.post("/api/connect/heartbeat")
-    def heartbeat(body: PresenceIn, uid: str = Depends(user_dep)):
-        now = db.now()
+    def identity(authorization: str | None, now: float) -> dict:
+        if not authorization or not authorization.lower().startswith("bearer "):
+            raise HTTPException(401, "join first and send your bearer token")
+        token = authorization[7:].strip()
         with lock:
-            presence[(uid, body.session_id)] = now
-        row = db.one("SELECT id, display_name FROM users WHERE id = ?", (uid,))
-        others = [person for person in online_users(now) if person["id"] != uid]
-        return {"me": {"id": row["id"], "name": row["display_name"], "online": True},
-                "online_clients": others, "presence_ttl_seconds": PRESENCE_TTL_S,
-                "server_time": now}
+            uid = token_to_id.get(token)
+            member = members.get(uid) if uid else None
+            if member is None:
+                raise HTTPException(401, "unknown or expired client token; join again")
+            member["last_seen"] = now
+            return member
 
-    @app.delete("/api/connect/heartbeat")
-    def leave(session_id: str, uid: str = Depends(user_dep)):
+    @app.post("/api/signal/join")
+    def join(body: JoinIn):
+        now = app.state.db.now()
+        clean(now)
+        key = body.name.casefold()
         with lock:
-            presence.pop((uid, session_id), None)
-        return {"ok": True}
+            if body.token:
+                uid = token_to_id.get(body.token)
+                member = members.get(uid) if uid else None
+                if member is None:
+                    raise HTTPException(401, "unknown or expired client token; join without the old token")
+                if member["name"].casefold() != key:
+                    raise HTTPException(403, "that token belongs to a different client name")
+                member["last_seen"] = now
+                return {"id": member["id"], "name": member["name"], "token": body.token,
+                        "online": True, "presence_ttl_seconds": PRESENCE_TTL_S}
+            for member in members.values():
+                if member["name"].casefold() == key:
+                    raise HTTPException(409, "that name is already online; choose another name")
+            uid = str(uuid.uuid4())
+            token = "sig_" + secrets.token_urlsafe(32)
+            member = {"id": uid, "name": body.name, "token": token, "last_seen": now}
+            members[uid] = member
+            token_to_id[token] = uid
+            return {"id": uid, "name": body.name, "token": token,
+                    "online": True, "presence_ttl_seconds": PRESENCE_TTL_S}
 
-    @app.get("/api/connect/people")
-    def people(uid: str = Depends(user_dep)):
-        now = db.now()
-        return {"online_clients": [person for person in online_users(now) if person["id"] != uid],
-                "server_time": now}
+    @app.get("/api/signal/members")
+    def list_members():
+        now = app.state.db.now()
+        clean(now)
+        with lock:
+            people = [{"id": m["id"], "name": m["name"], "online": True}
+                      for m in sorted(members.values(), key=lambda x: x["name"].casefold())]
+        return {"members": people, "server_time": now, "presence_ttl_seconds": PRESENCE_TTL_S}
 
     @app.post("/api/signal")
-    def send_signal(body: SignalIn, uid: str = Depends(user_dep)):
-        target = db.one("SELECT id, display_name FROM users WHERE id = ?", (body.to,))
-        if target is None:
-            target = db.one("SELECT id, display_name FROM users WHERE LOWER(display_name) = ?",
-                            (body.to.strip().lower(),))
-        if target is None:
-            raise HTTPException(404, "no such person")
-        if target["id"] == uid:
-            raise HTTPException(409, "cannot signal yourself")
-        sender = db.one("SELECT display_name FROM users WHERE id = ?", (uid,))
-        now = db.now()
+    def send_signal(body: SignalIn, authorization: str | None = Header(default=None)):
+        now = app.state.db.now()
+        clean(now)
+        sender = identity(authorization, now)
+        query = body.to.strip()
         with lock:
+            target = next((m for m in members.values()
+                           if m["id"] == query or m["name"].casefold() == query.casefold()), None)
+            if target is None:
+                raise HTTPException(404, "recipient is not online")
+            if target["id"] == sender["id"]:
+                raise HTTPException(409, "cannot signal yourself")
             counter["seq"] += 1
-            event = {"seq": counter["seq"], "answer": body.answer, "from": sender["display_name"],
-                     "from_id": uid, "to": target["id"], "created_at": now,
+            event = {"seq": counter["seq"], "answer": body.answer, "from": sender["name"],
+                     "from_id": sender["id"], "to": target["id"], "created_at": now,
                      "expires_at": now + SIGNAL_TTL_S}
             latest[target["id"]] = event
-        return {"ok": True, "seq": event["seq"], "to": target["id"], "expires_in_seconds": SIGNAL_TTL_S}
+        return {"ok": True, "seq": event["seq"], "to": target["id"],
+                "expires_in_seconds": SIGNAL_TTL_S}
 
     @app.get("/api/signal")
-    def read_signal(uid: str = Depends(user_dep)):
-        now = db.now()
+    def read_signal(authorization: str | None = Header(default=None)):
+        now = app.state.db.now()
+        clean(now)
+        member = identity(authorization, now)
         with lock:
-            signal = latest.get(uid)
+            signal = latest.get(member["id"])
             if signal is not None and signal["expires_at"] <= now:
-                latest.pop(uid, None)
+                latest.pop(member["id"], None)
                 signal = None
             else:
                 signal = dict(signal) if signal else None

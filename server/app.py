@@ -451,7 +451,7 @@ def create_app(cfg: Config | None = None, db: Database | None = None, start_work
 
     @app.get("/connect")
     def connect_page():
-        return FileResponse(UI / "connect.html")
+        return FileResponse(UI / "respond.html")
 
     @app.get("/")
     def phone_page():

@@ -43,19 +43,23 @@
   const load = (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } };
   const q = new URLSearchParams(location.search);
 
-  async function join(name) {
+  let timer = null;
+  async function join(name, fresh) {
     const r = await fetch("/api/signal/join", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, token: load("vs-token") }) });
+      body: JSON.stringify({ name, token: fresh ? null : load("vs-token") }) });
     const d = await r.json().catch(() => ({}));
+    if (r.status === 401 && !fresh) { store("vs-token"); return join(name, true); }   // stored token expired: join anew
     if (!r.ok) { $("err").textContent = typeof d.detail === "string" ? d.detail : "Could not join"; return; }
     me = d.name; token = d.token; store("vs-name", me); store("vs-token", token);
     $("join").hidden = true; $("live").hidden = false; $("me").textContent = me; $("myid").textContent = d.id; $("err").textContent = "";
-    tick(); setInterval(tick, 1500);
+    tick(); if (!timer) timer = setInterval(tick, 1500);
   }
   async function tick() {
     try {
       const auth = { Authorization: "Bearer " + token };
-      const sig = (await (await fetch("/api/signal", { headers: auth })).json()).signal;
+      const sr = await fetch("/api/signal", { headers: auth });
+      if (sr.status === 401) { join(me, true); return; }          // server dropped us (idle >12 s or restart)
+      const sig = (await sr.json()).signal;
       if (sig && sig.seq > seen) {
         seen = sig.seq;
         const ok = sig.answer === "accept";
@@ -76,6 +80,7 @@
       body: JSON.stringify({ to: b.dataset.to, answer: b.dataset.a }) });
     $("err").textContent = r.ok ? `Sent ${b.dataset.a} to ${b.dataset.to}` : "Failed: " + r.status;
   });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && token) tick(); });   // phone tab woke up
   $("go").onclick = () => { const n = $("name").value.trim(); if (n) join(n); };
   $("name").addEventListener("keydown", (e) => { if (e.key === "Enter") $("go").click(); });
   const start = q.get("name") || load("vs-name");
